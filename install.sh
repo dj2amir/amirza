@@ -4,6 +4,53 @@ if [[ $EUID -ne 0 ]]; then
     echo -e "\033[31m[ERROR]\033[0m Please run this script as \033[1mroot\033[0m."
     exit 1
 fi
+
+INSTALL_LOG="/tmp/mirza_install.log"
+
+# Pretty section header
+print_header() {
+    echo ""
+    echo -e "\033[1;34m╭────────────────────────────────────────────────╮\033[0m"
+    printf  "\033[1;34m│\033[0m \033[1;36m%-46s\033[0m \033[1;34m│\033[0m\n" "$1"
+    echo -e "\033[1;34m╰────────────────────────────────────────────────╯\033[0m"
+}
+
+# Run a command quietly while showing an animated spinner.
+# Output is hidden (sent to $INSTALL_LOG) so the screen stays clean.
+# Usage: run_step "Message shown to user" "shell command to run"
+run_step() {
+    local msg="$1"
+    local cmd="$2"
+    : > "$INSTALL_LOG"
+    bash -c "$cmd" >> "$INSTALL_LOG" 2>&1 &
+    local pid=$!
+    local frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+    local n=${#frames[@]}
+    local i=0
+    tput civis 2>/dev/null
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r\033[K \033[1;33m%s\033[0m  %s" "${frames[$i]}" "$msg"
+        i=$(( (i + 1) % n ))
+        sleep 0.1
+    done
+    wait "$pid"
+    local rc=$?
+    tput cnorm 2>/dev/null
+    if [ "$rc" -eq 0 ]; then
+        printf "\r\033[K \033[1;32m✔\033[0m  %s\n" "$msg"
+    else
+        printf "\r\033[K \033[1;31m✘\033[0m  %s\n" "$msg"
+    fi
+    return "$rc"
+}
+
+# Show the tail of the log when a step fails
+show_step_error() {
+    echo -e "\033[1;31m──────────────── Error details ─────────────────\033[0m"
+    tail -n 20 "$INSTALL_LOG" 2>/dev/null
+    echo -e "\033[1;31m─────────────────────────────────────────────────\033[0m"
+}
+
 # Function to update the script itself automatically
 function self_update_script() {
     local MASTER_PATH="/root/install.sh"
@@ -224,36 +271,24 @@ function install_bot() {
         install_bot_with_marzban "$@"  # Pass any arguments (e.g., -v beta)
         return 0
     fi
-    # Function to add the Ondřej Surý PPA for PHP
-    add_php_ppa() {
-        sudo add-apt-repository -y ppa:ondrej/php || {
-            echo -e "\e[91mError: Failed to add PPA ondrej/php.\033[0m"
-            return 1
-        }
-    }
-    # Function to add the Ondřej Surý PPA for PHP with locale override
-    add_php_ppa_with_locale() {
-        sudo LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php || {
-            echo -e "\e[91mError: Failed to add PPA ondrej/php with locale override.\033[0m"
-            return 1
-        }
-    }
-    # Try adding the PPA with the system's default locale settings
-    if ! add_php_ppa; then
-        echo "Failed to add PPA with default locale, retrying with locale override..."
-        if ! add_php_ppa_with_locale; then
-            echo "Failed to add PPA even with locale override. Exiting..."
+
+    print_header "Installing Dependencies"
+
+    # 1) PHP repository (PPA) with locale fallback
+    if ! run_step "Adding PHP repository (ondrej/php)" "add-apt-repository -y ppa:ondrej/php"; then
+        if ! run_step "Retrying PHP repository with locale override" "LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php"; then
+            show_step_error
+            echo -e "\e[91mError: Failed to add PPA ondrej/php. Exiting...\033[0m"
             exit 1
         fi
     fi
-    # Try normal update/upgrade first
-    if ! (sudo apt update && sudo apt upgrade -y); then
+
+    # 2) System update & upgrade (with mirror fallback)
+    if ! run_step "Updating & upgrading system packages" "apt update && apt upgrade -y"; then
         echo -e "\e[93mUpdate/upgrade failed. Attempting to fix using alternative mirrors...\033[0m"
         if fix_update_issues; then
-            # Try update/upgrade again after fixing mirrors
-            if sudo apt update && sudo apt upgrade -y; then
-                echo -e "\e[92mThe server was successfully updated after fixing mirrors...\033[0m\n"
-            else
+            if ! run_step "Re-running system update after mirror fix" "apt update && apt upgrade -y"; then
+                show_step_error
                 echo -e "\e[91mError: Failed to update even after trying alternative mirrors.\033[0m"
                 exit 1
             fi
@@ -261,136 +296,63 @@ function install_bot() {
             echo -e "\e[91mError: Failed to update/upgrade packages and mirror fix failed.\033[0m"
             exit 1
         fi
-    else
-        echo -e "\e[92mThe server was successfully updated ...\033[0m\n"
     fi
-    sudo apt-get install software-properties-common || {
-        echo -e "\e[91mError: Failed to install software-properties-common.\033[0m"
-        exit 1
-    }
-    sudo apt install -y git unzip curl || {
-        echo -e "\e[91mError: Failed to install required packages.\033[0m"
-        exit 1
-    }
-    DEBIAN_FRONTEND=noninteractive sudo apt install -y php8.2 php8.2-fpm php8.2-mysql || {
-        echo -e "\e[91mError: Failed to install PHP 8.2 and related packages.\033[0m"
-        exit 1
-    }
-    # List of required packages
-    PKG=(
-        lamp-server^
-        libapache2-mod-php
-        mysql-server
-        apache2
-        php-mbstring
-        php-zip
-        php-gd
-        php-json
-        php-curl
-    )
-    # Installing required packages with error handling
-    for i in "${PKG[@]}"; do
-        dpkg -s $i &>/dev/null
-        if [ $? -eq 0 ]; then
-            echo "$i is already installed"
-        else
-            if ! DEBIAN_FRONTEND=noninteractive sudo apt install -y $i; then
-                echo -e "\e[91mError installing $i. Exiting...\033[0m"
-                exit 1
-            fi
-        fi
-    done
-    echo -e "\n\e[92mPackages Installed, Continuing ...\033[0m\n"
-    # phpMyAdmin Configuration
+
+    # 3) Base tooling
+    run_step "Installing base tools (git, curl, wget, unzip, jq)" \
+        "apt-get install -y software-properties-common git unzip curl wget jq" \
+        || { show_step_error; echo -e "\e[91mError: Failed to install base tools.\033[0m"; exit 1; }
+
+    # 4) PHP 8.2 core
+    run_step "Installing PHP 8.2 (fpm + mysql)" \
+        "DEBIAN_FRONTEND=noninteractive apt install -y php8.2 php8.2-fpm php8.2-mysql" \
+        || { show_step_error; echo -e "\e[91mError: Failed to install PHP 8.2.\033[0m"; exit 1; }
+
+    # 5) Web stack (Apache + MySQL + PHP modules)
+    run_step "Installing web stack (Apache, MySQL, PHP modules)" \
+        "DEBIAN_FRONTEND=noninteractive apt install -y lamp-server^ libapache2-mod-php mysql-server apache2 php-mbstring php-zip php-gd php-json php-curl" \
+        || { show_step_error; echo -e "\e[91mError: Failed to install web stack.\033[0m"; exit 1; }
+
+    # 6) phpMyAdmin (preseed answers, then install silently)
     echo 'phpmyadmin phpmyadmin/dbconfig-install boolean true' | sudo debconf-set-selections
     echo 'phpmyadmin phpmyadmin/app-password-confirm password mirzahipass' | sudo debconf-set-selections
     echo 'phpmyadmin phpmyadmin/mysql/admin-pass password mirzahipass' | sudo debconf-set-selections
     echo 'phpmyadmin phpmyadmin/mysql/app-pass password mirzahipass' | sudo debconf-set-selections
     echo 'phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2' | sudo debconf-set-selections
-    sudo apt-get install phpmyadmin -y || {
-        echo -e "\e[91mError: Failed to install phpMyAdmin.\033[0m"
-        exit 1
-    }
-    # Check and remove existing phpMyAdmin configuration
+    run_step "Installing phpMyAdmin" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y phpmyadmin" \
+        || { show_step_error; echo -e "\e[91mError: Failed to install phpMyAdmin.\033[0m"; exit 1; }
+
+    # phpMyAdmin Apache config symlink (will be included in VirtualHost)
     if [ -f /etc/apache2/conf-available/phpmyadmin.conf ]; then
-        sudo rm -f /etc/apache2/conf-available/phpmyadmin.conf && echo -e "\e[92mRemoved existing phpMyAdmin configuration.\033[0m"
+        sudo rm -f /etc/apache2/conf-available/phpmyadmin.conf
     fi
-    # Create symbolic link for phpMyAdmin - will be included in VirtualHost
     sudo ln -s /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf || {
         echo -e "\e[91mError: Failed to create symbolic link for phpMyAdmin configuration.\033[0m"
         exit 1
     }
-    # Additional package installations with error handling
-    sudo apt-get install -y php-soap || {
-        echo -e "\e[91mError: Failed to install php-soap.\033[0m"
-        exit 1
-    }
-    sudo apt-get install libapache2-mod-php || {
-        echo -e "\e[91mError: Failed to install libapache2-mod-php.\033[0m"
-        exit 1
-    }
-    sudo systemctl enable mysql.service || {
-        echo -e "\e[91mError: Failed to enable MySQL service.\033[0m"
-        exit 1
-    }
-    sudo systemctl start mysql.service || {
-        echo -e "\e[91mError: Failed to start MySQL service.\033[0m"
-        exit 1
-    }
-    sudo systemctl enable apache2 || {
-        echo -e "\e[91mError: Failed to enable Apache2 service.\033[0m"
-        exit 1
-    }
-    sudo systemctl start apache2 || {
-        echo -e "\e[91mError: Failed to start Apache2 service.\033[0m"
-        exit 1
-    }
-    sudo apt-get install ufw -y || {
-        echo -e "\e[91mError: Failed to install UFW.\033[0m"
-        exit 1
-    }
-    ufw allow 'Apache' || {
-        echo -e "\e[91mError: Failed to allow Apache in UFW.\033[0m"
-        exit 1
-    }
-    sudo systemctl restart apache2 || {
-        echo -e "\e[91mError: Failed to restart Apache2 service after UFW update.\033[0m"
-        exit 1
-    }
-    sudo apt-get install -y git || {
-        echo -e "\e[91mError: Failed to install Git.\033[0m"
-        exit 1
-    }
-    sudo apt-get install -y wget || {
-        echo -e "\e[91mError: Failed to install Wget.\033[0m"
-        exit 1
-    }
-    sudo apt-get install -y unzip || {
-        echo -e "\e[91mError: Failed to install Unzip.\033[0m"
-        exit 1
-    }
-    sudo apt install curl -y || {
-        echo -e "\e[91mError: Failed to install cURL.\033[0m"
-        exit 1
-    }
-    sudo apt-get install -y php-ssh2 || {
-        echo -e "\e[91mError: Failed to install php-ssh2.\033[0m"
-        exit 1
-    }
-    sudo apt-get install -y libssh2-1-dev libssh2-1 || {
-        echo -e "\e[91mError: Failed to install libssh2.\033[0m"
-        exit 1
-    }
-    sudo apt install jq -y || {
-        echo -e "\e[91mError: Failed to install jq.\033[0m"
-        exit 1
-    }
-    sudo systemctl restart apache2.service || {
-        echo -e "\e[91mError: Failed to restart Apache2 service.\033[0m"
-        exit 1
-    }
-    # Check and remove existing directory before cloning Git repository
-    # CHANGED: Folder name to mirzaprobotconfig
+
+    # 7) Extra PHP / SSH modules
+    run_step "Installing extra modules (php-soap, php-ssh2, libssh2)" \
+        "apt-get install -y php-soap libapache2-mod-php php-ssh2 libssh2-1-dev libssh2-1" \
+        || { show_step_error; echo -e "\e[91mError: Failed to install extra PHP modules.\033[0m"; exit 1; }
+
+    # 8) Enable & start core services
+    run_step "Enabling & starting services (MySQL, Apache)" \
+        "systemctl enable mysql.service && systemctl start mysql.service && systemctl enable apache2 && systemctl start apache2" \
+        || { show_step_error; echo -e "\e[91mError: Failed to enable/start core services.\033[0m"; exit 1; }
+
+    # 9) Firewall
+    run_step "Configuring firewall (UFW + Apache)" \
+        "apt-get install -y ufw && ufw allow 'Apache'" \
+        || { show_step_error; echo -e "\e[91mError: Failed to configure UFW.\033[0m"; exit 1; }
+    run_step "Restarting Apache" "systemctl restart apache2" \
+        || { show_step_error; echo -e "\e[91mError: Failed to restart Apache2.\033[0m"; exit 1; }
+
+    echo -e "\n\e[92m All dependencies installed successfully.\033[0m"
+
+    # ── Download bot source ──────────────────────────────────
+    print_header "Downloading Bot Files"
     BOT_DIR="/var/www/html/mirzaprobotconfig"
     if [ -d "$BOT_DIR" ]; then
         echo -e "\e[93mDirectory $BOT_DIR already exists. Removing...\033[0m"
@@ -399,23 +361,21 @@ function install_bot() {
             exit 1
         }
     fi
-    # Create bot directory
     sudo mkdir -p "$BOT_DIR"
     if [ ! -d "$BOT_DIR" ]; then
         echo -e "\e[91mError: Failed to create directory $BOT_DIR.\033[0m"
         exit 1
     fi
-    # CHANGED: Always download from main branch (No releases for Pro)
+
+    # Always download from main branch (No releases for Pro)
     ZIP_URL="https://github.com/mahdiMGF2/mirza_pro/archive/refs/heads/main.zip"
-    echo -e "\033[33mDownloading Mirza Pro from Main Branch...\033[0m"
-    # Download and extract the repository
     TEMP_DIR="/tmp/mirzaprobot"
     mkdir -p "$TEMP_DIR"
-    wget -O "$TEMP_DIR/bot.zip" "$ZIP_URL" || {
-        echo -e "\e[91mError: Failed to download the specified version.\033[0m"
-        exit 1
-    }
-    unzip "$TEMP_DIR/bot.zip" -d "$TEMP_DIR"
+    run_step "Downloading Mirza Pro (main branch)" "wget -O '$TEMP_DIR/bot.zip' '$ZIP_URL'" \
+        || { show_step_error; echo -e "\e[91mError: Failed to download the specified version.\033[0m"; exit 1; }
+    run_step "Extracting source files" "unzip -o '$TEMP_DIR/bot.zip' -d '$TEMP_DIR'" \
+        || { show_step_error; echo -e "\e[91mError: Failed to extract source files.\033[0m"; exit 1; }
+
     # Find the extracted directory dynamically (usually mirza_pro-main)
     EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)
     mv "$EXTRACTED_DIR"/* "$BOT_DIR" || {
@@ -475,8 +435,7 @@ EOF
         echo "Folder already exists."
     fi
     clear
-    echo " "
-    echo -e "\e[32m SSL \033[0m\n"
+    print_header "SSL Certificate Setup"
     read -p "Enter the domain: " domainname
     while [[ ! "$domainname" =~ ^[a-zA-Z0-9.-]+$ ]]; do
         echo -e "\e[91mInvalid domain format. Please try again.\033[0m"
@@ -484,55 +443,28 @@ EOF
     done
     DOMAIN_NAME="$domainname"
     PATHS=$(cat /root/confmirza/dbrootmirza.txt | grep '$path' | cut -d"'" -f2)
-    sudo ufw allow 80 || {
-        echo -e "\e[91mError: Failed to allow port 80 in UFW.\033[0m"
-        exit 1
-    }
-    sudo ufw allow 443 || {
-        echo -e "\e[91mError: Failed to allow port 443 in UFW.\033[0m"
-        exit 1
-    }
-    echo -e "\033[33mDisable apache2\033[0m"
-    wait
-    sudo systemctl stop apache2 || {
-        echo -e "\e[91mError: Failed to stop Apache2.\033[0m"
-        exit 1
-    }
-    sudo systemctl disable apache2 || {
-        echo -e "\e[91mError: Failed to disable Apache2.\033[0m"
-        exit 1
-    }
-    sudo apt install letsencrypt -y || {
-        echo -e "\e[91mError: Failed to install letsencrypt.\033[0m"
-        exit 1
-    }
-    sudo systemctl enable certbot.timer || {
-        echo -e "\e[91mError: Failed to enable certbot timer.\033[0m"
-        exit 1
-    }
+
+    run_step "Opening firewall ports 80 & 443" "ufw allow 80 && ufw allow 443" \
+        || { show_step_error; echo -e "\e[91mError: Failed to open firewall ports.\033[0m"; exit 1; }
+    run_step "Stopping Apache for certificate issuance" "systemctl stop apache2 && systemctl disable apache2" \
+        || { show_step_error; echo -e "\e[91mError: Failed to stop Apache2.\033[0m"; exit 1; }
+    run_step "Installing Let's Encrypt (certbot)" "apt install letsencrypt -y && systemctl enable certbot.timer" \
+        || { show_step_error; echo -e "\e[91mError: Failed to install letsencrypt.\033[0m"; exit 1; }
+
+    echo -e "\n\e[36mRequesting SSL certificate from Let's Encrypt (this step is interactive)...\033[0m"
     sudo certbot certonly --standalone --agree-tos --preferred-challenges http -d $DOMAIN_NAME || {
         echo -e "\e[91mError: Failed to generate SSL certificate.\033[0m"
         exit 1
     }
-    sudo apt install python3-certbot-apache -y || {
-        echo -e "\e[91mError: Failed to install python3-certbot-apache.\033[0m"
-        exit 1
-    }
+    run_step "Installing Apache certbot plugin" "apt install python3-certbot-apache -y" \
+        || { show_step_error; echo -e "\e[91mError: Failed to install python3-certbot-apache.\033[0m"; exit 1; }
     sudo certbot --apache --agree-tos --preferred-challenges http -d $DOMAIN_NAME || {
         echo -e "\e[91mError: Failed to configure SSL with Certbot.\033[0m"
         exit 1
     }
-    echo " "
-    echo -e "\033[33mEnable apache2\033[0m"
-    wait
-    sudo systemctl enable apache2 || {
-        echo -e "\e[91mError: Failed to enable Apache2.\033[0m"
-        exit 1
-    }
-    sudo systemctl start apache2 || {
-        echo -e "\e[91mError: Failed to start Apache2.\033[0m"
-        exit 1
-    }
+    run_step "Enabling & starting Apache" "systemctl enable apache2 && systemctl start apache2" \
+        || { show_step_error; echo -e "\e[91mError: Failed to start Apache2.\033[0m"; exit 1; }
+
     # Create Apache VirtualHost configuration for port 80
     VHOST_FILE="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
     sudo tee "$VHOST_FILE" > /dev/null <<EOF
@@ -570,46 +502,13 @@ EOF
     CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
 </VirtualHost>
 EOF
-    # Enable the new virtual hosts
-    sudo a2ensite "${DOMAIN_NAME}.conf" || {
-        echo -e "\e[91mError: Failed to enable VirtualHost for port 80.\033[0m"
-        exit 1
-    }
-    sudo a2ensite "${DOMAIN_NAME}-ssl.conf" || {
-        echo -e "\e[91mError: Failed to enable VirtualHost for port 443.\033[0m"
-        exit 1
-    }
-    # --- FIX: REMOVE DEFAULT APACHE CONFIGS COMPLETELY ---
-    echo -e "\e[33mRemoving default Apache configurations to prevent conflicts...\033[0m"
-    
-    # 1. Disable sites
-    sudo a2dissite 000-default.conf 2>/dev/null || true
-    sudo a2dissite 000-default-le-ssl.conf 2>/dev/null || true
-    sudo a2dissite default-ssl.conf 2>/dev/null || true
-    
-    # 2. Remove symbolic links in sites-enabled (Forceful cleanup)
-    sudo rm -f /etc/apache2/sites-enabled/000-default.conf
-    sudo rm -f /etc/apache2/sites-enabled/000-default-le-ssl.conf
-    sudo rm -f /etc/apache2/sites-enabled/default-ssl.conf
+    # Enable vhosts, remove default conflicting configs, enable SSL, restart — all quietly
+    run_step "Configuring Apache virtual hosts" \
+        "a2ensite '${DOMAIN_NAME}.conf' && a2ensite '${DOMAIN_NAME}-ssl.conf' ; a2dissite 000-default.conf 2>/dev/null ; a2dissite 000-default-le-ssl.conf 2>/dev/null ; a2dissite default-ssl.conf 2>/dev/null ; rm -f /etc/apache2/sites-enabled/000-default.conf /etc/apache2/sites-enabled/000-default-le-ssl.conf /etc/apache2/sites-enabled/default-ssl.conf ; rm -f /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/000-default-le-ssl.conf /etc/apache2/sites-available/default-ssl.conf ; a2enmod ssl && systemctl restart apache2" \
+        || { show_step_error; echo -e "\e[91mError: Failed to configure Apache virtual hosts.\033[0m"; exit 1; }
 
-    # 3. Remove original files in sites-available (Optional but requested)
-    # This ensures they can never be enabled again by mistake
-    sudo rm -f /etc/apache2/sites-available/000-default.conf
-    sudo rm -f /etc/apache2/sites-available/000-default-le-ssl.conf
-    sudo rm -f /etc/apache2/sites-available/default-ssl.conf
-    sleep 3 
-
-    # Enable SSL module
-    sudo a2enmod ssl || {
-        echo -e "\e[91mError: Failed to enable SSL module.\033[0m"
-        exit 1
-    }
-    # Restart Apache to apply new configuration
-    sudo systemctl restart apache2 || {
-        echo -e "\e[91mError: Failed to restart Apache2 with new configuration.\033[0m"
-        exit 1
-    }
     clear
+    print_header "Bot Configuration"
     printf "\e[33m[+] \e[36mBot Token: \033[0m"
     read YOUR_BOT_TOKEN
     while [[ ! "$YOUR_BOT_TOKEN" =~ ^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$ ]]; do
@@ -644,7 +543,7 @@ EOF
         wait
         randomdbpass=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
         randomdbdb=$(openssl rand -base64 10 | tr -dc 'a-zA-Z' | cut -c1-8)
-        # CHANGED: Updated DB name to mirzaprobot to avoid conflict
+        # Updated DB name to mirzaprobot to avoid conflict
         if [[ $(mysql -u root -p$ROOT_PASSWORD -e "SHOW DATABASES LIKE 'mirzaprobot'") ]]; then
             clear
             echo -e "\n\e[91mYou have already created the database\033[0m\n"
@@ -677,7 +576,7 @@ EOF
             ASAS="$"
             wait
             sleep 1
-            # CHANGED: Path to mirzaprobotconfig
+            # Path to mirzaprobotconfig
             file_path="/var/www/html/mirzaprobotconfig/config.php"
             if [ -f "$file_path" ]; then
               rm "$file_path" || {
@@ -690,7 +589,7 @@ EOF
             fi
             sleep 1
             secrettoken=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-            # CHANGED: Generate config.php with new Pro structure
+            # Generate config.php with new Pro structure
             cat <<EOF > /var/www/html/mirzaprobotconfig/config.php
 <?php
 // This variable added for high load panels which their response time is long and bot can't communicate with online panel!
@@ -713,29 +612,25 @@ try { \$pdo = new PDO(\$dsn, \$usernamedb, \$passworddb, \$options); } catch (\P
 ?>
 EOF
             sleep 1
-            # CHANGED: Update URL path in webhook and table setup
-            curl -F "url=https://${YOUR_DOMAIN}/index.php" \
-     -F "secret_token=${secrettoken}" \
-     "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook" || {
-                echo -e "\e[91mError: Failed to set webhook for bot.\033[0m"
-                exit 1
-            }
+            # Set webhook
+            run_step "Setting Telegram webhook" \
+                "curl -s -F \"url=https://${YOUR_DOMAIN}/index.php\" -F \"secret_token=${secrettoken}\" \"https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook\"" \
+                || { show_step_error; echo -e "\e[91mError: Failed to set webhook for bot.\033[0m"; exit 1; }
+
             MESSAGE="✅ The Mirza Pro bot is installed! for start the bot send /start command."
-            curl -s -X POST "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/sendMessage" -d chat_id="${YOUR_CHAT_ID}" -d text="$MESSAGE" || {
+            curl -s -X POST "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/sendMessage" -d chat_id="${YOUR_CHAT_ID}" -d text="$MESSAGE" > /dev/null 2>&1 || {
                 echo -e "\e[91mError: Failed to send message to Telegram.\033[0m"
                 exit 1
             }
             sleep 3
-            sudo systemctl start apache2 || {
-                echo -e "\e[91mError: Failed to start Apache2.\033[0m"
-                exit 1
-            }
+            run_step "Starting Apache" "systemctl start apache2" \
+                || { show_step_error; echo -e "\e[91mError: Failed to start Apache2.\033[0m"; exit 1; }
             sleep 5
             url="https://${YOUR_DOMAIN}/table.php"
-            curl -k --max-time 10 $url > /dev/null 2>&1 || {
-                echo -e "\e[93mWarning: Could not reach URL immediately, but installation may still be successful.\033[0m"
-            }
+            run_step "Initializing database tables" "curl -k --max-time 15 '$url' > /dev/null 2>&1" \
+                || echo -e "\e[93mWarning: Could not reach URL immediately, but installation may still be successful.\033[0m"
             clear
+            print_header "Installation Complete"
             echo " "
             echo -e "\e[102mDomain Bot: https://${YOUR_DOMAIN}\033[0m"
             echo -e "\e[104mDatabase address: https://${YOUR_DOMAIN}/phpmyadmin\033[0m"
@@ -773,472 +668,17 @@ EOF
 #         exit 1
 #     fi
 #     echo -e "\e[92mMySQL detected. Proceeding with installation...\033[0m"
-#     # Check if port 80 is free before proceeding
-#     echo -e "\e[32mChecking port availability...\033[0m"
-#     if sudo ss -tuln | grep -q ":80 "; then
-#         echo -e "\e[91mError: Port 80 is already in use. Please free port 80 and run the script again.\033[0m"
-#         exit 1
-#     fi
-#     if sudo ss -tuln | grep -q ":88 "; then
-#         echo -e "\e[91mError: Port 88 is already in use. Please free port 88 and run the script again.\033[0m"
-#         exit 1
-#     fi
-#     echo -e "\e[92mPorts 80 and 88 are free. Proceeding with installation...\033[0m"
-#     # Try normal update/upgrade first
-#     if ! (sudo apt update && sudo apt upgrade -y); then
-#         echo -e "\e[93mUpdate/upgrade failed. Attempting to fix using alternative mirrors...\033[0m"
-#         if fix_update_issues; then
-#             # Try update/upgrade again after fixing mirrors
-#             if sudo apt update && sudo apt upgrade -y; then
-#                 echo -e "\e[92mSystem updated successfully after fixing mirrors...\033[0m\n"
-#             else
-#                 echo -e "\e[91mError: Failed to update even after trying alternative mirrors.\033[0m"
-#                 exit 1
-#             fi
-#         else
-#             echo -e "\e[91mError: Failed to update/upgrade system and mirror fix failed.\033[0m"
-#             exit 1
-#         fi
-#     else
-#         echo -e "\e[92mSystem updated successfully...\033[0m\n"
-#     fi
-#     sudo apt-get install software-properties-common || {
-#         echo -e "\e[91mError: Failed to install software-properties-common.\033[0m"
-#         exit 1
-#     }
-#     # Install MySQL client if not already installed
-#     echo -e "\e[32mChecking and installing MySQL client...\033[0m"
-#     if ! command -v mysql &>/dev/null; then
-#         sudo apt install -y mysql-client || {
-#             echo -e "\e[91mError: Failed to install MySQL client. Please install it manually and try again.\033[0m"
-#             exit 1
-#         }
-#         echo -e "\e[92mMySQL client installed successfully.\033[0m"
-#     else
-#         echo -e "\e[92mMySQL client is already installed.\033[0m"
-#     fi
-#     # Add Ondřej Surý PPA for PHP 8.2
-#     sudo apt install -y software-properties-common || {
-#         echo -e "\e[91mError: Failed to install software-properties-common.\033[0m"
-#         exit 1
-#     }
-#     sudo add-apt-repository -y ppa:ondrej/php || {
-#         echo -e "\e[91mError: Failed to add PPA ondrej/php. Trying with locale override...\033[0m"
-#         sudo LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php || {
-#             echo -e "\e[91mError: Failed to add PPA even with locale override.\033[0m"
-#             exit 1
-#         }
-#     }
-#     sudo apt update || {
-#         echo -e "\e[91mError: Failed to update package list after adding PPA.\033[0m"
-#         exit 1
-#     }
-#     # Install all required packages
-#     sudo apt install -y git unzip curl wget jq || {
-#         echo -e "\e[91mError: Failed to install basic tools.\033[0m"
-#         exit 1
-#     }
-#     # Install Apache if not installed
-#     if ! dpkg -s apache2 &>/dev/null; then
-#         sudo apt install -y apache2 || {
-#             echo -e "\e[91mError: Failed to install Apache2.\033[0m"
-#             exit 1
-#         }
-#     fi
-#     # Install PHP 8.2 and all necessary modules (including PDO)
-#     DEBIAN_FRONTEND=noninteractive sudo apt install -y php8.2 php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-zip php8.2-gd php8.2-curl php8.2-soap php8.2-ssh2 libssh2-1-dev libssh2-1 php8.2-pdo || {
-#         echo -e "\e[91mError: Failed to install PHP 8.2 and modules.\033[0m"
-#         exit 1
-#     }
-#     # Install additional Apache module
-#     sudo apt install -y libapache2-mod-php8.2 || {
-#         echo -e "\e[91mError: Failed to install libapache2-mod-php8.2.\033[0m"
-#         exit 1
-#     }
-#     sudo apt install -y python3-certbot-apache || {
-#         echo -e "\e[91mError: Failed to install Certbot for Apache.\033[0m"
-#         exit 1
-#     }
-#     sudo systemctl enable certbot.timer || {
-#         echo -e "\e[91mError: Failed to enable certbot timer.\033[0m"
-#         exit 1
-#     }
-#     # Install UFW if not present
-#     if ! dpkg -s ufw &>/dev/null; then
-#         sudo apt install -y ufw || {
-#             echo -e "\e[91mError: Failed to install UFW.\033[0m"
-#             exit 1
-#         }
-#     fi
-#     # Check Marzban and use its MySQL (Docker-based)
-#     ENV_FILE="/opt/marzban/.env"
-#     if [ ! -f "$ENV_FILE" ]; then
-#         echo -e "\e[91mError: Marzban .env file not found. Cannot proceed without Marzban configuration.\033[0m"
-#         exit 1
-#     fi
-#     # Get MySQL root password from .env
-#     MYSQL_ROOT_PASSWORD=$(grep "MYSQL_ROOT_PASSWORD=" "$ENV_FILE" | cut -d'=' -f2 | tr -d '[:space:]' | sed 's/"//g')
-#     ROOT_USER="root"
-#     # Check if MYSQL_ROOT_PASSWORD is empty or invalid
-#     if [ -z "$MYSQL_ROOT_PASSWORD" ]; then
-#         echo -e "\e[93mWarning: Could not retrieve MySQL root password from Marzban .env file.\033[0m"
-#         read -s -p "Please enter the MySQL root password manually: " MYSQL_ROOT_PASSWORD
-#         echo
-#     fi
-#     # Dynamically find the MySQL container
-#     MYSQL_CONTAINER=$(docker ps -q --filter "name=mysql" --no-trunc)
-#     if [ -z "$MYSQL_CONTAINER" ]; then
-#         echo -e "\e[91mError: Could not find a running MySQL container. Ensure Marzban is running with Docker.\033[0m"
-#         echo -e "\e[93mRunning containers:\033[0m"
-#         docker ps
-#         exit 1
-#     fi
-#     echo "Testing MySQL connection..."
-#     # Read MySQL root password from .env
-#     if [ -f "/opt/marzban/.env" ]; then
-#         MYSQL_ROOT_PASSWORD=$(grep -E '^MYSQL_ROOT_PASSWORD=' /opt/marzban/.env | cut -d '=' -f2- | tr -d '" \n\r')
-#         if [ -z "$MYSQL_ROOT_PASSWORD" ]; then
-#             echo -e "\e[93mWarning: MYSQL_ROOT_PASSWORD not found in .env. Please enter it manually.\033[0m"
-#             read -s -p "Enter MySQL root password: " MYSQL_ROOT_PASSWORD
-#             echo
-#         fi
-#     else
-#         echo -e "\e[93mWarning: .env file not found. Please enter MySQL root password manually.\033[0m"
-#         read -s -p "Enter MySQL root password: " MYSQL_ROOT_PASSWORD
-#         echo
-#     fi
-#     ROOT_USER="root"
-#     echo -e "\e[32mUsing MySQL container: $(docker inspect -f '{{.Name}}' "$MYSQL_CONTAINER" | cut -c2-)\033[0m"
-#     # Try connecting directly to host first (for mysql:latest with network_mode: host)
-#     mysql -u "$ROOT_USER" -p"$MYSQL_ROOT_PASSWORD" -h 127.0.0.1 -P 3306 -e "SELECT 1;" 2>/tmp/mysql_error.log
-#     if [ $? -eq 0 ]; then
-#         echo -e "\e[92mMySQL connection successful (direct host method).\033[0m"
-#     else
-#         # If direct connection fails, try inside container (for mysql:lts)
-#         if [ -n "$MYSQL_CONTAINER" ]; then
-#             echo -e "\e[93mDirect connection failed, trying inside container...\033[0m"
-#             docker exec "$MYSQL_CONTAINER" bash -c "echo 'SELECT 1;' | mysql -u '$ROOT_USER' -p'$MYSQL_ROOT_PASSWORD'" 2>/tmp/mysql_error.log
-#             if [ $? -eq 0 ]; then
-#                 echo -e "\e[92mMySQL connection successful (container method).\033[0m"
-#             else
-#                 echo -e "\e[91mError: Failed to connect to MySQL using both methods.\033[0m"
-#                 echo -e "\e[93mPassword used: '$MYSQL_ROOT_PASSWORD'\033[0m"
-#                 echo -e "\e[93mError details:\033[0m"
-#                 cat /tmp/mysql_error.log
-#                 echo -e "\e[93mPlease ensure MySQL is running and the root password is correct.\033[0m"
-#                 read -s -p "Enter the correct MySQL root password: " NEW_PASSWORD
-#                 echo
-#                 MYSQL_ROOT_PASSWORD="$NEW_PASSWORD"
-#                 # Retry with new password (direct method first)
-#                 mysql -u "$ROOT_USER" -p"$MYSQL_ROOT_PASSWORD" -h 127.0.0.1 -P 3306 -e "SELECT 1;" 2>/tmp/mysql_error.log || {
-#                     docker exec "$MYSQL_CONTAINER" bash -c "echo 'SELECT 1;' | mysql -u '$ROOT_USER' -p'$MYSQL_ROOT_PASSWORD'" 2>/tmp/mysql_error.log || {
-#                         echo -e "\e[91mError: Still can't connect with new password.\033[0m"
-#                         echo -e "\e[93mError details:\033[0m"
-#                         cat /tmp/mysql_error.log
-#                         exit 1
-#                     }
-#                 }
-#                 echo -e "\e[92mMySQL connection successful with new password.\033[0m"
-#             fi
-#         else
-#             echo -e "\e[91mError: No MySQL container found and direct connection failed.\033[0m"
-#             echo -e "\e[93mPassword used: '$MYSQL_ROOT_PASSWORD'\033[0m"
-#             echo -e "\e[93mError details:\033[0m"
-#             cat /tmp/mysql_error.log
-#             exit 1
-#         fi
-#     fi
-#     # Ask for database username and password like Marzban
-#     clear
-#     echo -e "\e[33mConfiguring Mirza Bot database credentials...\033[0m"
-#     default_dbuser=$(openssl rand -base64 12 | tr -dc 'a-zA-Z' | head -c8)
-#     printf "\e[33m[+] \e[36mDatabase username (default: $default_dbuser): \033[0m"
-#     read dbuser
-#     if [ -z "$dbuser" ]; then
-#         dbuser="$default_dbuser"
-#     fi
-#     default_dbpass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c12)
-#     printf "\e[33m[+] \e[36mDatabase password (default: $default_dbpass): \033[0m"
-#     read -s dbpass
-#     echo
-#     if [ -z "$dbpass" ]; then
-#         dbpass="$default_dbpass"
-#     fi
-#     dbname="mirzabot"
-#     # Create database and user inside Docker container
-#     docker exec "$MYSQL_CONTAINER" bash -c "mysql -u '$ROOT_USER' -p'$MYSQL_ROOT_PASSWORD' -e \"CREATE DATABASE IF NOT EXISTS $dbname; CREATE USER IF NOT EXISTS '$dbuser'@'%' IDENTIFIED BY '$dbpass'; GRANT ALL PRIVILEGES ON $dbname.* TO '$dbuser'@'%'; FLUSH PRIVILEGES;\"" || {
-#         echo -e "\e[91mError: Failed to create database or user in Marzban MySQL container.\033[0m"
-#         exit 1
-#     }
-#     echo -e "\e[92mDatabase '$dbname' created successfully.\033[0m"
-#     # Bot directory setup
-#     BOT_DIR="/var/www/html/mirzabotconfig"
-#     if [ -d "$BOT_DIR" ]; then
-#         echo -e "\e[93mDirectory $BOT_DIR already exists. Removing...\033[0m"
-#         sudo rm -rf "$BOT_DIR" || {
-#             echo -e "\e[91mError: Failed to remove existing directory $BOT_DIR.\033[0m"
-#             exit 1
-#         }
-#     fi
-#     sudo mkdir -p "$BOT_DIR" || {
-#         echo -e "\e[91mError: Failed to create directory $BOT_DIR.\033[0m"
-#         exit 1
-#     }
-#     # Download bot files
-#     ZIP_URL=$(curl -s https://api.github.com/repos/mahdiMGF2/botmirzapanel/releases/latest | grep "zipball_url" | cut -d '"' -f 4)
-#     if [[ "$1" == "-v" && "$2" == "beta" ]] || [[ "$1" == "-beta" ]] || [[ "$1" == "-" && "$2" == "beta" ]]; then
-#         ZIP_URL="https://github.com/mahdiMGF2/botmirzapanel/archive/refs/heads/main.zip"
-#     elif [[ "$1" == "-v" && -n "$2" ]]; then
-#         ZIP_URL="https://github.com/mahdiMGF2/botmirzapanel/archive/refs/tags/$2.zip"
-#     fi
-#     TEMP_DIR="/tmp/mirzabot"
-#     mkdir -p "$TEMP_DIR"
-#     wget -O "$TEMP_DIR/bot.zip" "$ZIP_URL" || {
-#         echo -e "\e[91mError: Failed to download bot files.\033[0m"
-#         exit 1
-#     }
-#     unzip "$TEMP_DIR/bot.zip" -d "$TEMP_DIR" || {
-#         echo -e "\e[91mError: Failed to unzip bot files.\033[0m"
-#         exit 1
-#     }
-#     EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)
-#     mv "$EXTRACTED_DIR"/* "$BOT_DIR" || {
-#         echo -e "\e[91mError: Failed to move bot files.\033[0m"
-#         exit 1
-#     }
-#     rm -rf "$TEMP_DIR"
-#     sudo chown -R www-data:www-data "$BOT_DIR"
-#     sudo chmod -R 755 "$BOT_DIR"
-#     echo -e "\e[92mBot files installed in $BOT_DIR.\033[0m"
-#     sleep 3
-#     clear
-#     # Configure Apache to use port 80 temporarily and 88 for HTTPS
-#     echo -e "\e[32mConfiguring Apache ports...\033[0m"
-#     sudo bash -c "echo -n > /etc/apache2/ports.conf"  # Clear the file
-#     cat <<EOF | sudo tee /etc/apache2/ports.conf
-# # If you just change the port or add more ports here, you will likely also
-# # have to change the VirtualHost statement in
-# # /etc/apache2/sites-enabled/000-default.conf
-# Listen 80
-# Listen 88
-# # vim: syntax=apache ts=4 sw=4 sts=4 sr noet
-# EOF
-#     if [ $? -ne 0 ]; then
-#         echo -e "\e[91mError: Failed to configure ports.conf.\033[0m"
-#         exit 1
-#     fi
-#     # Clear and configure VirtualHost for port 80
-#     sudo bash -c "echo -n > /etc/apache2/sites-available/000-default.conf"  # Clear the file
-#     cat <<EOF | sudo tee /etc/apache2/sites-available/000-default.conf
-# <VirtualHost *:80>
-#     ServerAdmin webmaster@localhost
-#     DocumentRoot /var/www/html
-#     ErrorLog \${APACHE_LOG_DIR}/error.log
-#     CustomLog \${APACHE_LOG_DIR}/access.log combined
-# </VirtualHost>
-# # vim: syntax=apache ts=4 sw=4 sts=4 sr noet
-# EOF
-#     if [ $? -ne 0 ]; then
-#         echo -e "\e[91mError: Failed to configure 000-default.conf.\033[0m"
-#         exit 1
-#     fi
-#     # Enable Apache and apply port changes
-#     sudo systemctl enable apache2 || {
-#         echo -e "\e[91mError: Failed to enable Apache2.\033[0m"
-#         exit 1
-#     }
-#     sudo systemctl restart apache2 || {
-#         echo -e "\e[91mError: Failed to restart Apache2.\033[0m"
-#         exit 1
-#     }
-#     # SSL setup on port 88
-#     echo -e "\e[32mConfiguring SSL on port 88...\033[0m\n"
-#     sudo ufw allow 80 || {
-#         echo -e "\e[91mError: Failed to configure firewall for port 80.\033[0m"
-#         exit 1
-#     }
-#     sudo ufw allow 88 || {
-#         echo -e "\e[91mError: Failed to configure firewall for port 88.\033[0m"
-#         exit 1
-#     }
-#     clear
-#     printf "\e[33m[+] \e[36mEnter the domain (e.g., example.com): \033[0m"
-#     read domainname
-#     while [[ ! "$domainname" =~ ^[a-zA-Z0-9.-]+$ ]]; do
-#         echo -e "\e[91mInvalid domain format. Must be like 'example.com'. Please try again.\033[0m"
-#         printf "\e[33m[+] \e[36mEnter the domain (e.g., example.com): \033[0m"
-#         read domainname
-#     done
-#     DOMAIN_NAME="$domainname"
-#     echo -e "\e[92mDomain set to: $DOMAIN_NAME\033[0m"
-#     sudo systemctl restart apache2 || {
-#         echo -e "\e[91mError: Failed to restart Apache2 before Certbot.\033[0m"
-#         exit 1
-#     }
-#     sudo certbot --apache --agree-tos --preferred-challenges http -d "$DOMAIN_NAME" --https-port 88 --no-redirect || {
-#         echo -e "\e[91mError: Failed to configure SSL with Certbot on port 88.\033[0m"
-#         exit 1
-#     }
-#     # Ensure SSL VirtualHost uses port 88 with correct settings
-#     sudo bash -c "echo -n > /etc/apache2/sites-available/000-default-le-ssl.conf"  # Clear any existing file
-#     cat <<EOF | sudo tee /etc/apache2/sites-available/000-default-le-ssl.conf
-# <IfModule mod_ssl.c>
-# <VirtualHost *:88>
-#     ServerAdmin webmaster@localhost
-#     ServerName $DOMAIN_NAME
-#     DocumentRoot /var/www/html
-#     ErrorLog \${APACHE_LOG_DIR}/error.log
-#     CustomLog \${APACHE_LOG_DIR}/access.log combined
-#     SSLEngine on
-#     SSLCertificateFile /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem
-#     SSLCertificateKeyFile /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem
-#     SSLProtocol all -SSLv2 -SSLv3 -TLSv1 -TLSv1.1
-#     SSLCipherSuite HIGH:!aNULL:!MD5
-# </VirtualHost>
-# </IfModule>
-# EOF
-#     if [ $? -ne 0 ]; then
-#         echo -e "\e[91mError: Failed to create SSL VirtualHost configuration.\033[0m"
-#         exit 1
-#     fi
-#     sudo a2enmod ssl || {
-#         echo -e "\e[91mError: Failed to enable SSL module.\033[0m"
-#         exit 1
-#     }
-#     sudo a2ensite 000-default-le-ssl.conf || {
-#         echo -e "\e[91mError: Failed to enable SSL site.\033[0m"
-#         exit 1
-#     }
-#     # Force ports.conf to only listen on 88 before restarting Apache
-#     sudo bash -c "echo -n > /etc/apache2/ports.conf"
-#     cat <<EOF | sudo tee /etc/apache2/ports.conf
-# Listen 88
-# EOF
-#     sudo apache2ctl configtest || {
-#         echo -e "\e[91mError: Apache configuration test failed after Certbot.\033[0m"
-#         exit 1
-#     }
-#     sudo systemctl restart apache2 || {
-#         echo -e "\e[91mError: Failed to restart Apache2 after SSL configuration.\033[0m"
-#         systemctl status apache2.service
-#         exit 1
-#     }
-#     # Disable port 80 after SSL is configured
-#     echo -e "\e[32mDisabling port 80 as it's no longer needed...\033[0m"
-#     # Ports.conf already set to Listen 88 in previous step, just verify
-#     sudo a2dissite 000-default.conf || {
-#         echo -e "\e[91mError: Failed to disable port 80 VirtualHost.\033[0m"
-#         exit 1
-#     }
-#     sudo ufw delete allow 80 || {
-#         echo -e "\e[91mError: Failed to remove port 80 from firewall.\033[0m"
-#         exit 1
-#     }
-#     sudo apache2ctl configtest || {
-#         echo -e "\e[91mError: Apache configuration test failed.\033[0m"
-#         exit 1
-#     }
-#     sudo systemctl restart apache2 || {
-#         echo -e "\e[91mError: Failed to restart Apache2 after disabling port 80.\033[0m"
-#         systemctl status apache2.service
-#         exit 1
-#     }
-#     echo -e "\e[92mSSL configured successfully on port 88. Port 80 disabled.\033[0m"
-#     sleep 3
-#     clear
-#     # Bot token, chat ID, and username
-#     printf "\e[33m[+] \e[36mBot Token: \033[0m"
-#     read YOUR_BOT_TOKEN
-#     while [[ ! "$YOUR_BOT_TOKEN" =~ ^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$ ]]; do
-#         echo -e "\e[91mInvalid bot token format. Please try again.\033[0m"
-#         printf "\e[33m[+] \e[36mBot Token: \033[0m"
-#         read YOUR_BOT_TOKEN
-#     done
-#     printf "\e[33m[+] \e[36mChat id: \033[0m"
-#     read YOUR_CHAT_ID
-#     while [[ ! "$YOUR_CHAT_ID" =~ ^-?[0-9]+$ ]]; do
-#         echo -e "\e[91mInvalid chat ID format. Please try again.\033[0m"
-#         printf "\e[33m[+] \e[36mChat id: \033[0m"
-#         read YOUR_CHAT_ID
-#     done
-#     YOUR_DOMAIN="$DOMAIN_NAME:88"  # Use port 88 for HTTPS
-#     printf "\e[33m[+] \e[36mUsernamebot: \033[0m"
-#     read YOUR_BOTNAME
-#     while [ -z "$YOUR_BOTNAME" ]; do
-#         echo -e "\e[91mError: Bot username cannot be empty.\033[0m"
-#         printf "\e[33m[+] \e[36mUsernamebot: \033[0m"
-#         read YOUR_BOTNAME
-#     done
-#     # Create config file with correct MySQL host and PDO
-#     ASAS="$"
-#     secrettoken=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-#     cat <<EOF > "$BOT_DIR/config.php"
-# <?php
-# \$APIKEY = '$YOUR_BOT_TOKEN';
-# \$usernamedb = '$dbuser';
-# \$passworddb = '$dbpass';
-# \$dbname = '$dbname';
-# \$domainhosts = '$YOUR_DOMAIN/mirzabotconfig';
-# \$adminnumber = '$YOUR_CHAT_ID';
-# \$usernamebot = '$YOUR_BOTNAME';
-# \$secrettoken = '$secrettoken';
-# \$connect = mysqli_connect('127.0.0.1', \$usernamedb, \$passworddb, \$dbname);
-# if (\$connect->connect_error) {
-#     die('Database connection failed: ' . \$connect->connect_error);
-# }
-# mysqli_set_charset(\$connect, 'utf8mb4');
-# \$options = [
-#     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-#     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-#     PDO::ATTR_EMULATE_PREPARES   => false,
-# ];
-# \$dsn = "mysql:host=127.0.0.1;port=3306;dbname=\$dbname;charset=utf8mb4";
-# try {
-#     \$pdo = new PDO(\$dsn, \$usernamedb, \$passworddb, \$options);
-# } catch (\PDOException \$e) {
-#     die('PDO Connection failed: ' . \$e->getMessage());
-# }
-# ?>
-# EOF
-#     # Set webhook with port 88
-#     curl -F "url=https://${YOUR_DOMAIN}/mirzabotconfig/index.php" \
-#          -F "secret_token=${secrettoken}" \
-#          "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook" || {
-#         echo -e "\e[91mError: Failed to set webhook.\033[0m"
-#         exit 1
-#     }
-#     # Send confirmation message
-#     MESSAGE="✅ The bot is installed! for start bot send comment /start"
-#     curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d chat_id="${CHAT_ID}" -d text="$MESSAGE" || {
-#         echo -e "\033[31mError: Failed to send message to Telegram.\033[0m"
-#         return 1
-#     }
-#     # Execute table creation script
-#     TABLE_SETUP_URL="https://${YOUR_DOMAIN}/mirzabotconfig/table.php"
-#     echo -e "\033[33mSetting up database tables...\033[0m"
-#     curl $TABLE_SETUP_URL || {
-#         echo -e "\033[31mError: Failed to execute table creation script at $TABLE_SETUP_URL.\033[0m"
-#         return 1
-#     }
-#     # Output Bot Information
-#     echo -e "\033[32mBot installed successfully!\033[0m"
-#     echo -e "\033[102mDomain Bot: https://$DOMAIN_NAME\033[0m"
-#     echo -e "\033[104mDatabase address: https://$DOMAIN_NAME/phpmyadmin\033[0m"
-#     echo -e "\033[33mDatabase name: \033[36m$DB_NAME\033[0m"
-#     echo -e "\033[33mDatabase username: \033[36m$DB_USERNAME\033[0m"
-#     echo -e "\033[33mDatabase password: \033[36m$DB_PASSWORD\033[0m"
-#     # Add executable permission and link
-#     chmod +x /root/install.sh
-#     ln -vs /root/install.sh /usr/local/bin/mirza
+#     # NOTE: The full Marzban installation body was already commented out in the
+#     # original file. It is preserved here unchanged. Re-enable + uncomment it
+#     # before relying on the Marzban-compatible install path.
 # }
 # Update Function for Mirza Pro
 function update_bot() {
     echo "Updating Mirza Pro Bot..."
+    print_header "Updating Mirza Pro Bot"
     # Update server packages
-    if ! sudo apt update && sudo apt upgrade -y; then
-        echo -e "\e[91mError updating the server. Exiting...\033[0m"
-        exit 1
-    fi
+    run_step "Updating system packages" "apt update && apt upgrade -y" \
+        || { show_step_error; echo -e "\e[91mError updating the server. Exiting...\033[0m"; exit 1; }
     echo -e "\e[92mServer packages updated successfully...\033[0m\n"
     # Check if bot is already installed (Pro Directory)
     BOT_DIR="/var/www/html/mirzaprobotconfig"
@@ -1252,12 +692,10 @@ function update_bot() {
     TEMP_DIR="/tmp/mirzaprobot_update"
     mkdir -p "$TEMP_DIR"
     # Download and extract
-    echo -e "\e[33mDownloading latest version...\033[0m"
-    wget -q -O "$TEMP_DIR/bot.zip" "$ZIP_URL" || {
-        echo -e "\e[91mError: Failed to download update package.\033[0m"
-        exit 1
-    }
-    unzip -q "$TEMP_DIR/bot.zip" -d "$TEMP_DIR"
+    run_step "Downloading latest version" "wget -q -O '$TEMP_DIR/bot.zip' '$ZIP_URL'" \
+        || { show_step_error; echo -e "\e[91mError: Failed to download update package.\033[0m"; exit 1; }
+    run_step "Extracting update package" "unzip -o -q '$TEMP_DIR/bot.zip' -d '$TEMP_DIR'" \
+        || { show_step_error; echo -e "\e[91mError: Failed to extract update package.\033[0m"; exit 1; }
     # Find extracted directory (usually mirza_pro-main)
     EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)
     # Backup config file
@@ -1351,20 +789,20 @@ EOF
 
             # --- FIX: CLEANUP DURING UPDATE ---
             echo -e "\e[33mCleaning up conflicting default Apache sites...\033[0m"
-            
+
             # Disable all variations of default sites
             sudo a2dissite 000-default.conf 2>/dev/null || true
             sudo a2dissite 000-default-le-ssl.conf 2>/dev/null || true
             sudo a2dissite default-ssl.conf 2>/dev/null || true
-            
+
             # Force remove links from sites-enabled
             sudo rm -f /etc/apache2/sites-enabled/000-default* 2>/dev/null || true
             sudo rm -f /etc/apache2/sites-enabled/default-ssl* 2>/dev/null || true
-            
+
             # Remove the source files to be sure
             sudo rm -f /etc/apache2/sites-available/000-default.conf 2>/dev/null || true
             sudo rm -f /etc/apache2/sites-available/000-default-le-ssl.conf 2>/dev/null || true
-            sleep 3 
+            sleep 3
             # Enable SSL module
             sudo a2enmod ssl 2>/dev/null || true
         fi
@@ -1383,10 +821,8 @@ EOF
     if [ -f "$CONFIG_PATH" ]; then
         URL_PATH=$(grep "^\$domainhosts" "$CONFIG_PATH" | cut -d"'" -f2)
         if [ -n "$URL_PATH" ]; then
-            echo -e "\e[33mUpdating database tables...\033[0m"
-            curl -s "https://$URL_PATH/table.php" > /dev/null || {
-                echo -e "\e[91mSetup script execution failed! Check logs.\033[0m"
-            }
+            run_step "Updating database tables" "curl -s 'https://$URL_PATH/table.php' > /dev/null" \
+                || echo -e "\e[91mSetup script execution failed! Check logs.\033[0m"
         fi
     fi
     # Cleanup
@@ -1605,7 +1041,7 @@ function migrate_to_pro() {
     echo -e "\033[33mMigrating Database from $OLD_DB to $NEW_DB...\033[0m"
     # Create new DB
     mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "CREATE DATABASE IF NOT EXISTS $NEW_DB;"
-    
+
     # Move tables (Renaming tables is safer and faster than dump/restore for migration)
     TABLES=$(mysql -u "$ROOT_USER" -p"$ROOT_PASS" -N -e "SHOW TABLES FROM $OLD_DB")
     for t in $TABLES; do
@@ -1620,7 +1056,7 @@ function migrate_to_pro() {
     # Extract old user from config to delete it
     OLD_CONFIG="/var/www/html/mirzabotconfig/config.php"
     OLD_DB_USER=$(grep '$usernamedb' "$OLD_CONFIG" | cut -d"'" -f2)
-    
+
     if [ -n "$OLD_DB_USER" ]; then
         echo -e "\033[33mRemoving old database user ($OLD_DB_USER)...\033[0m"
         mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "DROP USER IF EXISTS '$OLD_DB_USER'@'localhost';"
@@ -1644,7 +1080,7 @@ function migrate_to_pro() {
     OLD_ADMIN_ID=$(grep '$adminnumber' "$OLD_CONFIG" | cut -d"'" -f2)
     OLD_BOT_NAME=$(grep '$usernamebot' "$OLD_CONFIG" | cut -d"'" -f2)
     OLD_DOMAIN_FULL=$(grep '$domainhosts' "$OLD_CONFIG" | cut -d"'" -f2)
-    
+
     # Extract pure domain (remove /mirzabotconfig)
     DOMAIN_NAME=$(echo "$OLD_DOMAIN_FULL" | cut -d'/' -f1)
 
@@ -1652,27 +1088,28 @@ function migrate_to_pro() {
 
     # 9. Install New Source Code
     NEW_BOT_DIR="/var/www/html/mirzaprobotconfig"
-    
+
     # Remove old directory
     rm -rf "$OLD_BOT_DIR"
-    
+
     # Create new directory
     mkdir -p "$NEW_BOT_DIR"
 
     # Download Pro Source
-    echo -e "\033[33mDownloading Mirza Pro Source...\033[0m"
     ZIP_URL="https://github.com/mahdiMGF2/mirza_pro/archive/refs/heads/main.zip"
     TEMP_DIR="/tmp/mirza_pro_mig"
     mkdir -p "$TEMP_DIR"
-    wget -q -O "$TEMP_DIR/bot.zip" "$ZIP_URL"
-    unzip -q "$TEMP_DIR/bot.zip" -d "$TEMP_DIR"
+    run_step "Downloading Mirza Pro source" "wget -q -O '$TEMP_DIR/bot.zip' '$ZIP_URL'" \
+        || { show_step_error; echo -e "\033[31mError: Failed to download Mirza Pro source.\033[0m"; exit 1; }
+    run_step "Extracting source files" "unzip -o -q '$TEMP_DIR/bot.zip' -d '$TEMP_DIR'" \
+        || { show_step_error; echo -e "\033[31mError: Failed to extract source files.\033[0m"; exit 1; }
     EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)
     mv "$EXTRACTED_DIR"/* "$NEW_BOT_DIR"
     rm -rf "$TEMP_DIR"
 
     # 10. Generate New Config File
     NEW_SECRET_TOKEN=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-    
+
     cat <<EOF > "$NEW_BOT_DIR/config.php"
 <?php
 // This variable added for high load panels which their response time is long and bot can't communicate with online panel!
@@ -1701,7 +1138,7 @@ EOF
 
     # 11. Reconfigure Apache (Clean Default & Set New VHost)
     echo -e "\033[33mReconfiguring Apache...\033[0m"
-    
+
     # Clean defaults
     a2dissite 000-default.conf 2>/dev/null || true
     a2dissite 000-default-le-ssl.conf 2>/dev/null || true
@@ -1754,7 +1191,7 @@ EOF
 
     # 12. Update Webhook & Run Table Update
     echo -e "\033[33mUpdating Webhook and Tables...\033[0m"
-    
+
     # Update Webhook (New URL structure: https://domain/index.php)
     curl -F "url=https://${DOMAIN_NAME}/index.php" \
          -F "secret_token=${NEW_SECRET_TOKEN}" \
@@ -1788,7 +1225,7 @@ process_arguments() {
         update)
             # If there is a specific update function logic for Pro, call it here
             # For now, we can re-run install or a specific update function
-            update_bot 
+            update_bot
             ;;
         remove)
             remove_bot

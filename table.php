@@ -3,7 +3,6 @@ require_once 'function.php';
 require_once 'config.php';
 require_once 'botapi.php';
 global $connect;
-$textbotlang = languagechange();
 //-----------------------------------------------------------------
 try {
 
@@ -315,6 +314,8 @@ try {
 } catch (Exception $e) {
     file_put_contents('error_log channels', $e->getMessage());
 }
+$textbotlang = languagechange();
+
 //--------------------------------------------------------------
 try {
 
