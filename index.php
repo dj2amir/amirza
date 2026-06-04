@@ -6617,11 +6617,8 @@ if (isset($update['message']['successful_payment'])) {
                 ['text' => "🇬🇧 English", 'callback_data' => "setlang:en"],
             ],
             [
-                ['text' => "🇸🇦 العربية", 'callback_data' => "setlang:ar"],
-                ['text' => "🇷🇺 Русский", 'callback_data' => "setlang:ru"],
-            ],
-            [
                 ['text' => "🇨🇳 中文", 'callback_data' => "setlang:zh"],
+                ['text' => "🇷🇺 Русский", 'callback_data' => "setlang:ru"],
             ],
             [
                 ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "account"]
