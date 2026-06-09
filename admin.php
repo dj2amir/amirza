@@ -8466,6 +8466,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             sendmessage($from_id, $textbotlang['extracted']['admin_php']['eylanPanelOutput'] . json_encode($data), null, 'HTML');
             return;
         }
+        sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_set_4'], $optionX_ui_single, 'HTML');
         update("marzban_panel", "inbounds", json_encode($data['obj']['inboundIds']), "name_panel", $user['Processing_value']);
     } else {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_set_4'], $optionMarzban, 'HTML');
