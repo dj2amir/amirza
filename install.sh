@@ -365,8 +365,9 @@ setup_mysql_root() {
     sudo mkdir -p /root/confmirza || return 1
     touch /root/confmirza/dbrootmirza.txt || return 1
     sudo chmod -R 777 /root/confmirza/dbrootmirza.txt || return 1
-    local randomdbpasstxt passs userrr
+    local randomdbpasstxt passs userrr RANDOM_NUMBER
     randomdbpasstxt=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
+    RANDOM_NUMBER=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | cut -c1-12)
     echo "\$user = 'root';"               >> /root/confmirza/dbrootmirza.txt
     echo "\$pass = '${randomdbpasstxt}';" >> /root/confmirza/dbrootmirza.txt
     echo "\$path = '${RANDOM_NUMBER}';"   >> /root/confmirza/dbrootmirza.txt
@@ -906,30 +907,6 @@ function show_help_screen() {
     read -r _
     show_menu
 }
-function check_marzban_installed() {
-    if [ -f "/opt/marzban/docker-compose.yml" ]; then
-        return 0
-    else
-        return 1
-    fi
-}
-function detect_database_type() {
-    COMPOSE_FILE="/opt/marzban/docker-compose.yml"
-    if [ ! -f "$COMPOSE_FILE" ]; then
-        echo "unknown"
-        return 1
-    fi
-    if grep -q "^[[:space:]]*mysql:" "$COMPOSE_FILE"; then
-        echo "mysql"
-        return 0
-    elif grep -q "^[[:space:]]*mariadb:" "$COMPOSE_FILE"; then
-        echo "mariadb"
-        return 1
-    else
-        echo "sqlite"
-        return 1
-    fi
-}
 function find_free_port() {
     for port in {3300..3330}; do
         if ! ss -tuln | grep -q ":$port "; then
@@ -1099,13 +1076,6 @@ function install_bot() {
         show_menu
         return 1
     fi
-
-    if check_marzban_installed; then
-        echo -e "\033[41m[IMPORTANT WARNING]\033[0m \033[1;33mMarzban detected. Proceeding with Marzban-compatible installation.\033[0m"
-        install_bot_with_marzban "$@"
-        return 0
-    fi
-
     # ── Fresh-server requirement (only on a brand-new install) ──
     if ! has_resumable_state && [ ! -f "$CONFIG_FILE_DEFAULT" ]; then
         if ! precheck_fresh_server; then
@@ -1281,7 +1251,11 @@ function install_bot() {
         run_step "Extracting source files" "unzip -o '$TEMP_DIR/bot.zip' -d '$TEMP_DIR'" \
             || { show_step_error; install_pause "Extracting bot files"; }
 
-        EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)
+        EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)
+        if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
+            echo -e "\e[91mError: Extracted source folder not found (bad or empty download).\033[0m"
+            install_pause "Locating extracted files"
+        fi
         mv "$EXTRACTED_DIR"/* "$BOT_DIR" || {
             echo -e "\e[91mError: Failed to move extracted files.\033[0m"
             install_pause "Moving bot files"
@@ -1486,6 +1460,8 @@ EOF
                 fi
             done
         fi
+        YOUR_BOTNAME="${YOUR_BOTNAME#@}"
+        YOUR_BOTNAME="${YOUR_BOTNAME//[[:space:]]/}"
         state_set BOTNAME "$YOUR_BOTNAME"
     fi
 
@@ -1685,7 +1661,11 @@ function update_bot() {
         || { show_step_error; echo -e "\e[91mError: Failed to download update package.\033[0m"; exit 1; }
     run_step "Extracting update package" "unzip -o -q '$TEMP_DIR/bot.zip' -d '$TEMP_DIR'" \
         || { show_step_error; echo -e "\e[91mError: Failed to extract update package.\033[0m"; exit 1; }
-    EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)
+    EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)
+    if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
+        echo -e "\e[91mError: Extracted update folder not found. Aborting before touching the current install.\033[0m"
+        rm -rf "$TEMP_DIR"; sleep 2; show_menu; return 1
+    fi
     CONFIG_PATH="$BOT_DIR/config.php"
     TEMP_CONFIG="/root/mirzapro_config_backup.php"
     if [ -f "$CONFIG_PATH" ]; then
@@ -1817,14 +1797,9 @@ function remove_bot() {
         exit 1
     fi
     read -p "Are you sure you want to remove Mirza Bot and its dependencies? (y/n): " choice
-    if [[ "$choice" != "y" ]]; then
+    if [[ ! "$choice" =~ ^[Yy]$ ]]; then
         echo "Aborting..." | tee -a "$LOG_FILE"
         exit 0
-    fi
-    if check_marzban_installed; then
-        echo -e "\e[41m[IMPORTANT NOTICE]\033[0m \e[33mMarzban detected. Proceeding with Marzban-compatible removal.\033[0m" | tee -a "$LOG_FILE"
-        remove_bot_with_marzban
-        return 0
     fi
     echo "Removing Mirza Bot..." | tee -a "$LOG_FILE"
     CONFIG_PATH="/var/www/html/mirzaprobotconfig/config.php"
@@ -2012,7 +1987,11 @@ function migrate_to_pro() {
         || { show_step_error; echo -e "\033[31mError: Failed to download Mirza source.\033[0m"; exit 1; }
     run_step "Extracting source files" "unzip -o -q '$TEMP_DIR/bot.zip' -d '$TEMP_DIR'" \
         || { show_step_error; echo -e "\033[31mError: Failed to extract source files.\033[0m"; exit 1; }
-    EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)
+    EXTRACTED_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)
+    if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
+        echo -e "\033[31mError: Extracted source folder not found. Aborting migration.\033[0m"
+        rm -rf "$TEMP_DIR"; exit 1
+    fi
     mv "$EXTRACTED_DIR"/* "$NEW_BOT_DIR"
     rm -rf "$TEMP_DIR"
     NEW_SECRET_TOKEN=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
