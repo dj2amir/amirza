@@ -3520,7 +3520,7 @@ elseif ($datain == "systemsms") {
             $Condition_marzban = "";
             $text_marzban = sprintf($textbotlang['Admin']['adminphp']['ok_select_panel_user_1'], $total_user, $active_users, $System_Stats['version'], $mem_total, $mem_used, $bandwidth, $ListSell, $ListSellSUM, $marzban_list_get['agent']);
             if ($marzban_list_get['version_panel'] == "1") {
-                $text_marzban = str_replace("مرزبان", "پاسارگاد", $text_marzban);
+                $text_marzban = str_replace($textbotlang['keyboard']['marzban'], $textbotlang['keyboard']['passargadPanel'], $text_marzban);
             }
             sendmessage($from_id, $text_marzban, $optionMarzban, 'HTML');
         } elseif (isset($Check_token['detail']) && $Check_token['detail'] == "Incorrect username or password") {
