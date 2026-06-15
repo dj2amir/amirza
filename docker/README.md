@@ -8,8 +8,8 @@ git clone https://github.com/mahdiMGF2/mirzabot.git
 cd mirzabot
 
 # Create environment file
-cp .env.example .env
-# Edit .env with your values
+cp docker/.env.example docker/.env
+# Edit docker/.env with your values
 
 # Start services
 docker-compose up -d

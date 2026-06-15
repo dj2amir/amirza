@@ -1,9 +1,11 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     ports:
       - "8080:80"
-    env_file: .env
+    env_file: docker/.env
     depends_on:
       db:
         condition: service_healthy
