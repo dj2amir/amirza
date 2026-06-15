@@ -1,0 +1,11 @@
+.git/
+.mimocode/
+.env
+.env.*
+!.env.example
+*.log
+error_log
+install.sh
+README.md
+LICENSE
+docker/

@@ -10,3 +10,15 @@
 <Files "*.zip">
     Require all denied
 </Files>
+<Files "config.php">
+    Require all denied
+</Files>
+<Files ".env">
+    Require all denied
+</Files>
+<Files ".env.*">
+    Require all denied
+</Files>
+
+RewriteEngine On
+RewriteRule (^|/)\.(?!well-known/) - [F]
