@@ -12,6 +12,14 @@ for var in DB_HOST DB_NAME DB_USER DB_PASS TELEGRAM_TOKEN ADMIN_ID DOMAIN BOT_US
     fi
 done
 
+# Proxy status
+if [ -n "$TG_PROXY" ]; then
+    masked="${TG_PROXY:0:10}...${TG_PROXY: -3}"
+    echo "TG_PROXY is set: ${masked}"
+else
+    echo "TG_PROXY is not set (direct connection)"
+fi
+
 echo "Waiting for MySQL to be ready..."
 until php -r "
 try {
@@ -82,18 +90,43 @@ chown -R www-data:www-data /var/www/html/storage
 echo "Initializing database tables..."
 php /var/www/html/table.php 2>/dev/null || echo "Warning: table.php initialization skipped (tables may already exist)"
 
-echo "Setting Telegram webhook..."
+echo "Testing connection to Telegram API..."
 PROXY_OPT=""
 if [ -n "$TG_PROXY" ]; then
     PROXY_OPT="--proxy $TG_PROXY"
+    echo "Using proxy: $TG_PROXY"
 fi
+
+CURL_OUTPUT=$(curl -s $PROXY_OPT --max-time 10 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getMe" 2>&1)
+CURL_EXIT=$?
+if [ $CURL_EXIT -ne 0 ]; then
+    echo "ERROR: Cannot reach Telegram API (curl exit code: ${CURL_EXIT})"
+    echo "curl output: ${CURL_OUTPUT}"
+    if [ -n "$TG_PROXY" ]; then
+        echo "TIP: Check if your proxy is reachable. Test with: curl -x ${TG_PROXY} https://api.telegram.org"
+    else
+        echo "TIP: Telegram is blocked. Set TG_PROXY in docker/.env (e.g., socks5://host:port)"
+    fi
+    exit 1
+fi
+echo "Telegram API is reachable."
+
+echo "Setting Telegram webhook..."
 WEBHOOK_URL="https://${DOMAIN}/index.php"
-WEBHOOK_RESPONSE=$(curl -s $PROXY_OPT -F "url=${WEBHOOK_URL}" -F "secret_token=${SECRET_TOKEN}" "https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook" 2>/dev/null)
+WEBHOOK_RESPONSE=$(curl -s $PROXY_OPT -F "url=${WEBHOOK_URL}" -F "secret_token=${SECRET_TOKEN}" "https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook" 2>&1)
+WEBHOOK_EXIT=$?
+if [ $WEBHOOK_EXIT -ne 0 ]; then
+    echo "ERROR: Webhook setup failed (curl exit code: ${WEBHOOK_EXIT})"
+    echo "curl output: ${WEBHOOK_RESPONSE}"
+    exit 1
+fi
 if echo "$WEBHOOK_RESPONSE" | grep -q '"ok":true'; then
     echo "Webhook set successfully: ${WEBHOOK_URL}"
 else
-    echo "Warning: Webhook setup may have failed. Response: ${WEBHOOK_RESPONSE}"
+    echo "ERROR: Webhook API returned error:"
+    echo "${WEBHOOK_RESPONSE}"
     echo "You can set it manually later via: curl -F 'url=https://YOUR_DOMAIN/index.php' -F 'secret_token=YOUR_TOKEN' https://api.telegram.org/botYOUR_TOKEN/setWebhook"
+    exit 1
 fi
 
 echo "Sending welcome message to admin..."
