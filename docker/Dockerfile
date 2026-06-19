@@ -13,8 +13,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6-dev \
     libicu-dev \
     libxml2-dev \
-    libbcmath-dev \
-    libsoap-dev \
     libssh2-1-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
