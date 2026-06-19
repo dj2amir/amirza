@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6-dev \
     libicu-dev \
     libxml2-dev \
-    libssh2-1-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
     pdo_mysql \
@@ -26,7 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xml \
     bcmath \
     soap \
-    ssh2 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN a2enmod rewrite
