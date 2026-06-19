@@ -168,3 +168,7 @@ docker-compose up -d --build
   - Use SSH tunnel: `ssh -L 8081:localhost:8081 your-server`
 - The `config.php` file is generated at runtime and is not exposed in the Docker image
 - Webhook secret token validates Telegram callback authenticity
+
+## TODO
+
+- `mysql_native_password` is deprecated in MySQL 8.0 and will be removed in MySQL 9.0. Migrate to `caching_sha2_password` when upgrading MySQL or PHP, which will require enabling SSL or public key retrieval in the PHP connection.
