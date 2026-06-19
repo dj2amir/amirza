@@ -8,6 +8,8 @@ services:
     env_file: docker/.env
     environment:
       - TG_PROXY=${TG_PROXY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

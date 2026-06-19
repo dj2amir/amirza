@@ -97,13 +97,16 @@ if [ -n "$TG_PROXY" ]; then
     echo "Using proxy: $TG_PROXY"
 fi
 
+set +e
 CURL_OUTPUT=$(curl -s $PROXY_OPT --max-time 10 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getMe" 2>&1)
 CURL_EXIT=$?
+set -e
 if [ $CURL_EXIT -ne 0 ]; then
     echo "ERROR: Cannot reach Telegram API (curl exit code: ${CURL_EXIT})"
     echo "curl output: ${CURL_OUTPUT}"
     if [ -n "$TG_PROXY" ]; then
         echo "TIP: Check if your proxy is reachable. Test with: curl -x ${TG_PROXY} https://api.telegram.org"
+        echo "TIP: If proxy is on the host machine, use host.docker.internal instead of 127.0.0.1"
     else
         echo "TIP: Telegram is blocked. Set TG_PROXY in docker/.env (e.g., socks5://host:port)"
     fi
