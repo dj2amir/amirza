@@ -83,8 +83,12 @@ echo "Initializing database tables..."
 php /var/www/html/table.php 2>/dev/null || echo "Warning: table.php initialization skipped (tables may already exist)"
 
 echo "Setting Telegram webhook..."
+PROXY_OPT=""
+if [ -n "$TG_PROXY" ]; then
+    PROXY_OPT="--proxy $TG_PROXY"
+fi
 WEBHOOK_URL="https://${DOMAIN}/index.php"
-WEBHOOK_RESPONSE=$(curl -s -F "url=${WEBHOOK_URL}" -F "secret_token=${SECRET_TOKEN}" "https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook" 2>/dev/null)
+WEBHOOK_RESPONSE=$(curl -s $PROXY_OPT -F "url=${WEBHOOK_URL}" -F "secret_token=${SECRET_TOKEN}" "https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook" 2>/dev/null)
 if echo "$WEBHOOK_RESPONSE" | grep -q '"ok":true'; then
     echo "Webhook set successfully: ${WEBHOOK_URL}"
 else
@@ -93,7 +97,7 @@ else
 fi
 
 echo "Sending welcome message to admin..."
-curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+curl -s $PROXY_OPT -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
     -d chat_id="${ADMIN_ID}" \
     -d text="The Mirza bot is installed and running!" > /dev/null 2>&1 || true
 

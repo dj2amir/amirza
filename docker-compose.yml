@@ -6,6 +6,8 @@ services:
     ports:
       - "8080:80"
     env_file: docker/.env
+    environment:
+      - TG_PROXY=${TG_PROXY:-}
     depends_on:
       db:
         condition: service_healthy
