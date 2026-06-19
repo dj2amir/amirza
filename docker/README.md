@@ -12,10 +12,10 @@ cp docker/.env.example docker/.env
 # Edit docker/.env with your values
 
 # Start services
-docker-compose up -d
+docker compose up -d
 
 # Check logs
-docker-compose logs -f app
+docker compose logs -f app
 ```
 
 ## Environment Variables
@@ -83,7 +83,7 @@ Caddy automatically handles SSL certificates.
 
 ### Option 3: Traefik
 
-Add labels to docker-compose.yml:
+Add labels to docker compose.yml:
 
 ```yaml
 services:
@@ -123,7 +123,7 @@ Docker volumes preserve data across container restarts:
 
 ```bash
 # Backup database
-docker-compose exec db mysqldump -u root -p mirzaprobot > backup.sql
+docker compose exec db mysqldump -u root -p mirzaprobot > backup.sql
 
 # Backup all volumes
 docker run --rm -v mirzabot_db-data:/data -v $(pwd):/backup alpine tar czf /backup/db-data.tar.gz -C /data .
@@ -136,7 +136,7 @@ docker run --rm -v mirzabot_db-data:/data -v $(pwd):/backup alpine tar czf /back
 git pull
 
 # Rebuild and restart
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ## Troubleshooting
@@ -146,12 +146,12 @@ docker-compose up -d --build
 1. Check webhook: `curl https://api.telegram.org/botYOUR_TOKEN/getWebhookInfo`
 2. Verify domain points to your server
 3. Check SSL certificate is valid
-4. Review app logs: `docker-compose logs app`
+4. Review app logs: `docker compose logs app`
 
 ### Database connection failed
 
-1. Ensure MySQL is running: `docker-compose ps`
-2. Check credentials in `.env` match `docker-compose.yml`
+1. Ensure MySQL is running: `docker compose ps`
+2. Check credentials in `.env` match `docker compose.yml`
 3. Wait for MySQL healthcheck to pass
 
 ### phpMyAdmin access
@@ -163,7 +163,7 @@ docker-compose up -d --build
 ## Security Notes
 
 - phpMyAdmin is exposed on port 8081 without SSL in development. For production, either:
-  - Disable phpMyAdmin in docker-compose.yml
+  - Disable phpMyAdmin in docker compose.yml
   - Place it behind your reverse proxy with SSL
   - Use SSH tunnel: `ssh -L 8081:localhost:8081 your-server`
 - The `config.php` file is generated at runtime and is not exposed in the Docker image
