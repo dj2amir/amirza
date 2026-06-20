@@ -114,31 +114,38 @@ if [ $CURL_EXIT -ne 0 ]; then
 fi
 echo "Telegram API is reachable."
 
-echo "Setting Telegram webhook..."
 WEBHOOK_URL="https://${DOMAIN}/index.php"
-MAX_RETRIES=5
-RETRY_COUNT=0
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    WEBHOOK_RESPONSE=$(curl -s $PROXY_OPT -F "url=${WEBHOOK_URL}" -F "secret_token=${SECRET_TOKEN}" "https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook" 2>&1)
-    WEBHOOK_EXIT=$?
-    if [ $WEBHOOK_EXIT -eq 0 ] && echo "$WEBHOOK_RESPONSE" | grep -q '"ok":true'; then
-        echo "Webhook set successfully: ${WEBHOOK_URL}"
-        break
-    fi
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    if echo "$WEBHOOK_RESPONSE" | grep -q '"error_code":429'; then
-        RETRY_AFTER=$(echo "$WEBHOOK_RESPONSE" | grep -o '"retry_after":[0-9]*' | cut -d: -f2)
-        RETRY_AFTER=${RETRY_AFTER:-5}
-        echo "Rate limited by Telegram. Retrying in ${RETRY_AFTER}s... (attempt ${RETRY_COUNT}/${MAX_RETRIES})"
-        sleep $RETRY_AFTER
-    else
-        echo "ERROR: Webhook setup failed: ${WEBHOOK_RESPONSE}"
+
+echo "Checking existing webhook..."
+WEBHOOK_INFO=$(curl -s $PROXY_OPT "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getWebhookInfo" 2>&1)
+if echo "$WEBHOOK_INFO" | grep -q "\"url\":\"${WEBHOOK_URL}\""; then
+    echo "Webhook already set to ${WEBHOOK_URL}, skipping."
+else
+    echo "Setting Telegram webhook..."
+    MAX_RETRIES=5
+    RETRY_COUNT=0
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        WEBHOOK_RESPONSE=$(curl -s $PROXY_OPT -F "url=${WEBHOOK_URL}" -F "secret_token=${SECRET_TOKEN}" "https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook" 2>&1)
+        WEBHOOK_EXIT=$?
+        if [ $WEBHOOK_EXIT -eq 0 ] && echo "$WEBHOOK_RESPONSE" | grep -q '"ok":true'; then
+            echo "Webhook set successfully: ${WEBHOOK_URL}"
+            break
+        fi
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if echo "$WEBHOOK_RESPONSE" | grep -q '"error_code":429'; then
+            RETRY_AFTER=$(echo "$WEBHOOK_RESPONSE" | grep -o '"retry_after":[0-9]*' | cut -d: -f2)
+            RETRY_AFTER=${RETRY_AFTER:-5}
+            echo "Rate limited by Telegram. Retrying in ${RETRY_AFTER}s... (attempt ${RETRY_COUNT}/${MAX_RETRIES})"
+            sleep $RETRY_AFTER
+        else
+            echo "ERROR: Webhook setup failed: ${WEBHOOK_RESPONSE}"
+            exit 1
+        fi
+    done
+    if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+        echo "ERROR: Webhook setup failed after ${MAX_RETRIES} attempts"
         exit 1
     fi
-done
-if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-    echo "ERROR: Webhook setup failed after ${MAX_RETRIES} attempts"
-    exit 1
 fi
 
 echo "Sending welcome message to admin..."
