@@ -1668,6 +1668,9 @@ function languagechange($path_dir = null, string $lang = 'fa')
     $allowed = ['fa', 'en', 'ar', 'ru', 'zh'];
     if (!in_array($lang, $allowed, true))
         $lang = 'fa';
+    if ($path_dir) {
+        return require $path_dir . '/lang/' . $lang . '.php';
+    }
     return require __DIR__ . '/lang/' . $lang . '.php';
 }
 function generateAuthStr($length = 10)

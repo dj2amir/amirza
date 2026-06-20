@@ -6,7 +6,6 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../botapi.php';
 require_once __DIR__ . '/../panels.php';
 require_once __DIR__ . '/../function.php';
-
 class ServiceMonitor
 {
     private $Panel;
@@ -26,7 +25,7 @@ class ServiceMonitor
         $this->reportCron = select("topicid", "idreport", "report", "reportcron", "select")['idreport'];
         $this->setting = select("setting", "*");
         $this->status_cron = json_decode($this->setting['cron_status'], true);
-        $this->textBotLang = languagechange();
+        $this->textBotLang = languagechange(dirname(__DIR__));
         $this->text_Purchased_services = $this->textBotLang['textbot']['purchasedServices'] ?? '';
     }
 
@@ -246,13 +245,12 @@ class ServiceMonitor
         sendmessage($invoice['id_user'], $message, $keyboard, 'HTML', $bot_token);
     }
 
-    private function createExtendServiceKeyboard($invoiceId)
+    public function createExtendServiceKeyboard($invoiceId)
     {
-        global $textbotlang;
         return json_encode([
             'inline_keyboard' => [
                 [
-                    ['text' => $textbotlang['keyboard']['renewService'], 'callback_data' => 'extend_' . $invoiceId],
+                    ['text' => $this->textBotLang['keyboard']['renewService'], 'callback_data' => 'extend_' . $invoiceId],
                 ],
             ]
         ]);
