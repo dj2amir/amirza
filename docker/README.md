@@ -32,6 +32,7 @@ docker compose logs -f app
 | `DOMAIN` | Your domain name (e.g., `bot.example.com`) | Yes |
 | `BOT_USERNAME` | Telegram bot username (without @) | Yes |
 | `WEBHOOK_SECRET_TOKEN` | Custom webhook secret (auto-generated if not set) | No |
+| `TG_PROXY` | SOCKS5/HTTP proxy for Telegram API (e.g., `socks5://host:port`) | No |
 
 ## Services
 
@@ -168,6 +169,41 @@ docker compose up -d --build
   - Use SSH tunnel: `ssh -L 8081:localhost:8081 your-server`
 - The `config.php` file is generated at runtime and is not exposed in the Docker image
 - Webhook secret token validates Telegram callback authenticity
+
+## Localhost Proxy
+
+If your SOCKS proxy listens on `127.0.0.1` (e.g., SSH tunnel), Docker containers can't reach it directly. Use socat on the host to forward:
+
+```bash
+# Find your Docker gateway IP
+docker network inspect bridge | grep Gateway
+
+# Start socat (replace 172.17.0.1 with your gateway IP)
+socat TCP-LISTEN:20171,reuseaddr,fork,bind=172.17.0.1 TCP:127.0.0.1:20170 &
+```
+
+Then set in `docker/.env`:
+```
+TG_PROXY=socks5://172.17.0.1:20171
+```
+
+To make it persistent, create `/etc/systemd/system/socat-proxy.service`:
+```ini
+[Unit]
+Description=Socat proxy forwarder
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/socat TCP-LISTEN:20171,reuseaddr,fork,bind=0.0.0.0 TCP:127.0.0.1:20170
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now socat-proxy
+```
 
 ## TODO
 
