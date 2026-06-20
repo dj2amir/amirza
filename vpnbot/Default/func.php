@@ -43,7 +43,9 @@ function DirectPaymentbot($order_id,$image = 'images.jpg'){
 ✍️ توضیحات : {$Payment_report['dec_not_confirmed']}";
         Editmessagetext($from_id, $message_id, $textconfrom, $Confirm_pay);
         }
-        sendmessage($Payment_report['id_user'], sprintf($textbotlang['hardcoded']['balanceChargedThanks'], $Payment_report['price'], $Payment_report['id_order']), null, 'HTML');
+        sendmessage($Payment_report['id_user'], "💎 کاربر گرامی مبلغ {$Payment_report['price']} تومان به کیف پول شما واریز گردید با تشکراز پرداخت شما.
+                
+🛒 کد پیگیری شما: {$Payment_report['id_order']}", null, 'HTML');
 }
 function channel_check($id_channel){
     global $from_id;
