@@ -1584,12 +1584,20 @@ User balance after reduction: %s',
 
 
 ',
-                        'ask_send_api' => '⚙️ Send the API of the plisio.net.io site
-        
-        plisio api :%s',
-                        'ask_enter_api' => '💳 Obtain your NOWPAYMENT API and enter it in this section
-        
- Your current api: %s',
+                        'ask_send_api' => '⚙️ Please send your Plisio API Key.
+
+🔑 To get your API key, visit the following site:
+plisio.net
+
+📌 Your current key:
+<code>%s</code>',
+                        'ask_enter_api' => '⚙️ Please send your NowPayments API Key.
+
+🔑 To get your API key, visit the following site:
+nowpayments.io
+
+📌 Your current key:
+<code>%s</code>',
                         'ask_enter_payment_merchant' => '💳 Obtain your merchant code from Aghaye Pardakht and enter it in this section
         
 Your current merchant code: %s',
@@ -2005,7 +2013,7 @@ Connection link:
         ⚠️ Dear user; you are not a member of our channel
 Join the channel via the button below
 After joining, click the check membership button',
-                'cryptoPayment' => '💸 Pay with cryptocurrency',
+                'cryptoPayment' => '💰 Crypto Payment with NowPayments',
                 'discount' => '🎁 Gift code',
                 'extend' => '♻️ Renew service',
                 'faq' => '❓ FAQ',
@@ -2062,7 +2070,7 @@ After joining, click the check membership button',
  Service information :
 {config}
 🧑‍🦯 You can get the connection method by pressing the button below and selecting your operating system',
-                'nowPayment' => '💵 Foreign currency payment 1',
+                'nowPayment' => '💰 Crypto Payment with Plisio',
                 'nowPaymentTron' => '💵 Tron crypto deposit',
                 'paymentNotVerify' => 'Rial gateway',
                 'preInvoice' => '📇 Your pro forma invoice:
@@ -2694,7 +2702,7 @@ We hope you had a good experience with the ease and speed of your service. If yo
                         'sendMessageText' => '📌 Send the text of your message',
                         'messageSentSuccess' => 'The message was sent successfully',
                         'messageSentForRequestReview' => '✅  Your message for this request was sent successfully. It will be answered after review.',
-                        'notSentLabel' => '🔴 Not sent 🔴',
+                        'notSentLabel' => '❌<b> Not sent </b>❌',
                         'confirmedByAdmin' => '✅ Approved by admin',
                         'roleNormal' => 'Regular',
                         'roleAgent' => 'Agent',
@@ -3148,7 +3156,8 @@ Service deletion reason : %s',
 
 🔹 Before sending a report, view the connection tutorials. ( /help )',
                 'enterAmountToman' => '💸 Enter the amount in Toman:
-✅  The minimum amount is %s and the maximum is %s Toman',
+
+⚠️  The minimum amount is <b>%s</b> and the maximum is <b>%s</b> Toman',
                 'extraTimeError' => 'Error purchasing extra volume
 Panel name : %s
 Service username : %s
@@ -3987,23 +3996,21 @@ Panel name : %s',
 🔹 Each transaction is valid for 1 day; after expiry, refrain from depositing.
 
 ✅ If you have a problem, contact support.',
-                'transactionCreatedTron' => '✅ Your transaction was created
+                'transactionCreatedTron' => '✅ Your invoice has been created
 
 🛒 Tracking code: <code>%s</code>
-🌐 Network: TRX
+🌐 Network: TRX - Tron
 💳 Wallet address: <code>%s</code>
-💲 Transaction amount: %s TRX
 
-📌 Deposit the amount of %s Toman; after depositing, click the button below and send the receipt
+📌 Please deposit <code>%s</code> TRX to the wallet address above, then click the button below and send the receipt.
 
 💢 Please note these points before payment 👇
+🔸 If you enter the wallet address incorrectly, the transaction will not be confirmed and no refund is possible.
+🔹 The sent amount must not be less or more than the declared amount.
+🔹 If you deposit more than the specified amount, it is not possible to add the difference.
+🔹 Each transaction is valid for one hour; do not send any amount after the expiration message.
 
-🔸 If the wallet address is entered incorrectly, the transaction will not be approved and a refund is not possible
-🔹 The sent amount must not be less or more than the stated amount
-🔹 If you deposit more than the stated amount, adding the difference is not possible
-🔹 Each transaction is valid for one hour, and after receiving the transaction expiry message, do not send any amount to the wallet under any circumstances
-
-✅ If you have a problem, you can contact support',
+✅ If you have any issues, you can contact support.',
                 'unitByte' => 'Byte',
                 'unitGig' => 'GB',
                 'unitGigabyte' => 'gigabytes',

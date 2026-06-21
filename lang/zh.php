@@ -1584,12 +1584,20 @@ f,n.n2',
 
 
 ',
-                        'ask_send_api' => '⚙️ 请发送 plisio.net.io 网站的 API
-        
-        plisio api :%s',
-                        'ask_enter_api' => '💳 获取您的 NOWPAYMENT API 并在此部分输入
-        
- 您当前的 api：%s',
+                        'ask_send_api' => '⚙️ 请发送您的 Plisio API 密钥。
+
+🔑 要获取 API 密钥，请访问以下网站：
+plisio.net
+
+📌 您当前的密钥：
+<code>%s</code>',
+                        'ask_enter_api' => '⚙️ 请发送您的 NowPayments API 密钥。
+
+🔑 要获取 API 密钥，请访问以下网站：
+nowpayments.io
+
+📌 您当前的密钥：
+<code>%s</code>',
                         'ask_enter_payment_merchant' => '💳 从 Aghaye Pardakht 获取您的商户代码并在此部分输入
         
 您当前的商户代码：%s',
@@ -2005,7 +2013,7 @@ f,n.n2',
         ⚠️ 尊敬的用户；您不是我们频道的成员
 请通过下方按钮加入频道
 加入后，点击检查成员资格按钮',
-                'cryptoPayment' => '💸 使用加密货币支付',
+                'cryptoPayment' => '💰 使用 NowPayments 支付加密货币',
                 'discount' => '🎁 礼品码',
                 'extend' => '♻️ 续费服务',
                 'faq' => '❓ 常见问题',
@@ -2062,7 +2070,7 @@ f,n.n2',
  服务信息：
 {config}
 🧑‍🦯 您可以通过按下方按钮并选择您的操作系统来获取连接方法',
-                'nowPayment' => '💵 外币支付 1',
+                'nowPayment' => '💰 使用 Plisio 支付加密货币',
                 'nowPaymentTron' => '💵 Tron 加密货币充值',
                 'paymentNotVerify' => '里亚尔网关',
                 'preInvoice' => '📇 您的预开发票：
@@ -2694,7 +2702,7 @@ f,n.n2',
                         'sendMessageText' => '📌 请发送您的消息文本',
                         'messageSentSuccess' => '消息发送成功',
                         'messageSentForRequestReview' => '✅  您针对此请求的消息发送成功。审核后将给您回复。',
-                        'notSentLabel' => '🔴 未发送 🔴',
+                        'notSentLabel' => '❌<b> 未发送 </b>❌',
                         'confirmedByAdmin' => '✅ 已由管理员批准',
                         'roleNormal' => '普通',
                         'roleAgent' => '代理',
@@ -3148,7 +3156,8 @@ f,n.n2',
 
 🔹 发送报告前，请查看连接教程。( /help )',
                 'enterAmountToman' => '💸 请输入金额（托曼）：
-✅  最低金额为 %s，最高为 %s 托曼',
+
+⚠️  最低金额为 <b>%s</b>，最高为 <b>%s</b> 托曼',
                 'extraTimeError' => '购买额外流量出错
 面板名称：%s
 服务用户名：%s
@@ -3990,20 +3999,18 @@ https://t.me/%s?start=%s',
                 'transactionCreatedTron' => '✅ 您的交易已创建
 
 🛒 跟踪码：<code>%s</code>
-🌐 网络：TRX
+🌐 网络：TRX - Tron
 💳 钱包地址：<code>%s</code>
-💲 交易金额：%s TRX
 
-📌 请存入 %s 托曼；存入后，点击下方按钮并发送收据
+📌 请向上述钱包地址存入 <code>%s</code> TRX，然后点击下方按钮并发送收据。
 
 💢 付款前请注意以下事项 👇
+🔸 如果钱包地址输入错误，交易将不被批准，且无法退款。
+🔹 发送的金额不得少于或多于规定金额。
+🔹 如果存入超过规定金额，无法补加差额。
+🔹 每笔交易有效期为一小时，收到交易过期消息后，请在任何情况下都不要向钱包发送任何金额。
 
-🔸 如果钱包地址输入错误，交易将不被批准，且无法退款
-🔹 发送的金额不得少于或多于规定金额
-🔹 如果存入超过规定金额，无法补加差额
-🔹 每笔交易有效期为一小时，收到交易过期消息后，请在任何情况下都不要向钱包发送任何金额
-
-✅ 如有问题，您可以联系客服',
+✅ 如有问题，您可以联系客服。',
                 'unitByte' => '字节',
                 'unitGig' => 'GB',
                 'unitGigabyte' => '千兆字节',

@@ -1258,7 +1258,7 @@ function DirectPayment($order_id, $image = 'images.jpg')
         sendmessage($Payment_report['id_user'], sprintf($textbotlang['hardcoded']['balanceChargedThanks'], $Payment_report['price'], $Payment_report['id_order']), null, 'HTML');
     }
 }
-function plisio($order_id, $price)
+function plisio($order_id, $price, $from_id)
 {
     $apinowpayments = select("PaySetting", "ValuePay", "NamePay", "apinowpayment", "select")['ValuePay'];
     $api_key = $apinowpayments;
@@ -1268,14 +1268,14 @@ function plisio($order_id, $price)
     $url .= '&source_amount=' . urlencode($price);
     $url .= '&order_number=' . urlencode($order_id);
     $url .= '&email=customer@plisio.net';
-    $url .= '&order_name=plisio';
+    $url .= '&order_name=' . urlencode('TopUp - ' . $from_id);
     $url .= '&language=fa';
     $url .= '&api_key=' . urlencode($api_key);
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     $response = json_decode(curl_exec($ch), true);
-    return $response['data'];
     curl_close($ch);
+    return $response['data'];
 }
 function checkConnection($address, $port)
 {
