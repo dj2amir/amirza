@@ -23,6 +23,10 @@ function telegram($method, $datas = [], $token = null)
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+    $proxy = getenv('TG_PROXY');
+    if ($proxy) {
+        curl_setopt($ch, CURLOPT_PROXY, $proxy);
+    }
     curl_setopt($ch, CURLOPT_POSTFIELDS, $datas);
 
     $rawResponse = curl_exec($ch);
